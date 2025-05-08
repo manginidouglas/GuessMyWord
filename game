@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binary Letter Guessing Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none; /* Prevents pull-to-refresh on mobile */
+        }
+        .alphabet-letter {
+            display: inline-block;
+            width: 30px; /* Fixed width for alignment */
+            height: 30px; /* Fixed height for alignment */
+            line-height: 30px; /* Vertically center text */
+            text-align: center;
+            border: 1px solid #e2e8f0; /* Tailwind gray-300 */
+            margin: 2px;
+            border-radius: 0.25rem; /* rounded-md */
+            font-weight: 600; /* semibold */
+        }
+        .highlight {
+            background-color: #60a5fa; /* Tailwind blue-400 */
+            color: white;
+            border-color: #3b82f6; /* Tailwind blue-600 */
+        }
+        .button-base {
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem; /* rounded-lg */
+            font-weight: 600;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .button-base:active {
+            transform: translateY(1px);
+        }
+        .button-yes {
+            background-color: #22c55e; /* Tailwind green-500 */
+            color: white;
+        }
+        .button-yes:hover {
+            background-color: #16a34a; /* Tailwind green-600 */
+        }
+        .button-no {
+            background-color: #ef4444; /* Tailwind red-500 */
+            color: white;
+        }
+        .button-no:hover {
+            background-color: #dc2626; /* Tailwind red-600 */
+        }
+        .button-start {
+            background-color: #3b82f6; /* Tailwind blue-500 */
+            color: white;
+        }
+        .button-start:hover {
+            background-color: #2563eb; /* Tailwind blue-600 */
+        }
+        /* Ensure content fits on small screens */
+        .game-container {
+            width: 100%;
+            max-width: 600px; /* Max width for larger screens */
+            margin-left: auto;
+            margin-right: auto;
+        }
+        #alphabet-display-container {
+            display: flex;
+            flex-wrap: wrap; /* Allow letters to wrap on small screens */
+            justify-content: center; /* Center letters if they wrap */
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col items-center justify-center p-4 selection:bg-blue-200">
+
+    <div id="game-container" class="bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full">
+
+        <div id="intro-area" class="text-center">
+            <h1 class="text-2xl sm:text-3xl font-bold text-blue-600 mb-4">Binary Letter Guesser!</h1>
+            <p class="mb-2 text-sm sm:text-base">Let's see how computers use <span class="font-semibold text-pink-500">0s</span> and <span class="font-semibold text-pink-500">1s</span> to find letters!</p>
+            <p class="mb-6 text-sm sm:text-base">Type a short word (letters A-Z only) and I'll guess it using binary choices.</p>
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-2">
+                <input type="text" id="word-input" placeholder="Enter a word" class="border-2 border-slate-300 p-3 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-center sm:text-left w-full sm:w-auto flex-grow">
+                <button id="start-game-btn" class="button-base button-start w-full sm:w-auto">Start Guessing!</button>
+            </div>
+            <p id="input-error" class="text-red-500 text-sm mt-2 h-5"></p> </div>
+
+        <div id="game-area" class="hidden text-center">
+            <h2 id="current-letter-info" class="text-xl sm:text-2xl font-semibold text-blue-600 mb-4"></h2>
+            
+            <div id="alphabet-display-container" class="mb-4 p-2 border border-slate-200 rounded-lg bg-slate-50">
+                </div>
+
+            <p id="question-prompt" class="text-md sm:text-lg mb-6 font-medium"></p>
+            
+            <div class="flex justify-center space-x-4 mb-6">
+                <button id="yes-btn" class="button-base button-yes w-24 sm:w-28">Yes</button>
+                <button id="no-btn" class="button-base button-no w-24 sm:w-28">No</button>
+            </div>
+
+            <div id="feedback-area" class="mb-6 p-3 bg-amber-100 border border-amber-300 rounded-lg">
+                <p class="text-sm sm:text-base">Binary code for this letter so far: <span id="current-binary-code" class="font-bold text-pink-600"></span></p>
+            </div>
+
+            <div id="results-area" class="p-3 bg-sky-100 border border-sky-300 rounded-lg">
+                <p class="text-sm sm:text-base">Word guessed so far: <span id="guessed-word-display" class="font-bold text-green-600"></span></p>
+                <p class="text-sm sm:text-base mt-1">Binary for guessed word: <span id="full-binary-word-display" class="font-mono text-purple-600 text-xs sm:text-sm"></span></p>
+            </div>
+        </div>
+
+        <div id="final-message-area" class="hidden text-center mt-8">
+            <h2 id="final-word-message" class="text-2xl font-bold text-green-600 mb-4"></h2>
+            <p class="mb-2 text-md">The full binary representation for your word is:</p>
+            <p id="final-binary-output" class="font-mono text-purple-700 bg-purple-100 p-3 rounded-lg text-sm sm:text-base inline-block"></p>
+            <p class="mt-6 text-sm sm:text-base">See how each 'Yes' or 'No' helped find the letter, just like a '0' or '1' in computer code!</p>
+            <button id="restart-btn" class="button-base button-start mt-8">Play Again with a New Word!</button>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const wordInput = document.getElementById('word-input');
+        const startGameBtn = document.getElementById('start-game-btn');
+        const inputError = document.getElementById('input-error');
+
+        const introArea = document.getElementById('intro-area');
+        const gameArea = document.getElementById('game-area');
+        const finalMessageArea = document.getElementById('final-message-area');
+
+        const currentLetterInfo = document.getElementById('current-letter-info');
+        const alphabetDisplayContainer = document.getElementById('alphabet-display-container');
+        const questionPrompt = document.getElementById('question-prompt');
+        const yesBtn = document.getElementById('yes-btn');
+        const noBtn = document.getElementById('no-btn');
+
+        const currentBinaryCodeDisplay = document.getElementById('current-binary-code');
+        const guessedWordDisplay = document.getElementById('guessed-word-display');
+        const fullBinaryWordDisplay = document.getElementById('full-binary-word-display');
+        
+        const finalWordMessage = document.getElementById('final-word-message');
+        const finalBinaryOutput = document.getElementById('final-binary-output');
+        const restartBtn = document.getElementById('restart-btn');
+
+        // --- Game State Variables ---
+        const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
+        let secretWord = "";
+        let currentLetterIndex = 0;
+        let targetLetter = ''; // The actual character we are looking for (e.g., 'A')
+        
+        let currentSearchLow = 0; // Index in ALPHABET
+        let currentSearchHigh = ALPHABET.length - 1; // Index in ALPHABET
+        let currentSearchMid = 0;
+
+        let binaryStringForCurrentLetter = "";
+        let guessedWord = "";
+        let binaryForGuessedWord = "";
+
+        // --- Initialize Alphabet Display ---
+        function initializeAlphabetDisplay() {
+            alphabetDisplayContainer.innerHTML = ''; // Clear previous letters
+            ALPHABET.forEach(letter => {
+                const letterSpan = document.createElement('span');
+                letterSpan.textContent = letter;
+                letterSpan.classList.add('alphabet-letter');
+                letterSpan.id = `alpha-${letter}`; // ID for easy access
+                alphabetDisplayContainer.appendChild(letterSpan);
+            });
+        }
+        initializeAlphabetDisplay(); // Call once on page load
+
+        // --- Helper Functions ---
+        function updateAlphabetHighlight(low, mid, high) {
+            // Clear previous highlights
+            ALPHABET.forEach(l => document.getElementById(`alpha-${l}`).classList.remove('highlight'));
+            // Highlight the current query range (first half)
+            for (let i = low; i <= mid; i++) {
+                document.getElementById(`alpha-${ALPHABET[i]}`).classList.add('highlight');
+            }
+        }
+
+        function resetGameUI() {
+            introArea.classList.remove('hidden');
+            gameArea.classList.add('hidden');
+            finalMessageArea.classList.add('hidden');
+            
+            wordInput.value = "";
+            inputError.textContent = "";
+            currentBinaryCodeDisplay.textContent = "";
+            guessedWordDisplay.textContent = "";
+            fullBinaryWordDisplay.textContent = "";
+        }
+
+        // --- Game Logic Functions ---
+        function startGame() {
+            const word = wordInput.value.toUpperCase().trim();
+            // Basic validation: only letters, not empty
+            if (!/^[A-Z]+$/.test(word)) {
+                inputError.textContent = "Please enter a word using only letters (A-Z).";
+                return;
+            }
+            if (word.length === 0) {
+                inputError.textContent = "Please enter a word.";
+                return;
+            }
+            inputError.textContent = ""; // Clear any previous error
+
+            secretWord = word;
+            currentLetterIndex = 0;
+            guessedWord = "";
+            binaryForGuessedWord = "";
+
+            introArea.classList.add('hidden');
+            gameArea.classList.remove('hidden');
+            finalMessageArea.classList.add('hidden');
+            
+            guessedWordDisplay.textContent = "_".repeat(secretWord.length);
+            fullBinaryWordDisplay.textContent = "";
+
+            prepareNextLetter();
+        }
+
+        function prepareNextLetter() {
+            if (currentLetterIndex >= secretWord.length) {
+                endGame();
+                return;
+            }
+
+            targetLetter = secretWord[currentLetterIndex];
+            currentSearchLow = 0;
+            currentSearchHigh = ALPHABET.length - 1;
+            binaryStringForCurrentLetter = "";
+            
+            currentLetterInfo.textContent = `Guessing letter ${currentLetterIndex + 1} of ${secretWord.length} (It's a '${targetLetter}')`; // For learning, show the target
+            currentBinaryCodeDisplay.textContent = " "; // Start with empty
+            
+            askQuestion();
+        }
+
+        function askQuestion() {
+            // If low and high are the same, we've found the letter
+            if (currentSearchLow === currentSearchHigh) {
+                letterFound();
+                return;
+            }
+
+            currentSearchMid = Math.floor((currentSearchLow + currentSearchHigh) / 2);
+            
+            // Display the first half of the current search range
+            const firstHalfLetters = ALPHABET.slice(currentSearchLow, currentSearchMid + 1);
+            questionPrompt.textContent = `Is your letter ('${targetLetter}') in this group: ${firstHalfLetters.join(', ')}?`;
+            
+            updateAlphabetHighlight(currentSearchLow, currentSearchMid, currentSearchHigh);
+            
+            // Enable buttons
+            yesBtn.disabled = false;
+            noBtn.disabled = false;
+        }
+
+        function handleAnswer(isYes) {
+            // Disable buttons to prevent multiple clicks
+            yesBtn.disabled = true;
+            noBtn.disabled = true;
+
+            if (isYes) {
+                binaryStringForCurrentLetter += "0"; // 0 for choosing the first half
+                currentSearchHigh = currentSearchMid; // Narrow search to the first half
+            } else {
+                binaryStringForCurrentLetter += "1"; // 1 for choosing the second half
+                currentSearchLow = currentSearchMid + 1; // Narrow search to the second half
+            }
+            currentBinaryCodeDisplay.textContent = binaryStringForCurrentLetter;
+            
+            // Add a small delay before asking the next question or confirming letter
+            setTimeout(askQuestion, 500); 
+        }
+
+        function letterFound() {
+            const foundLetter = ALPHABET[currentSearchLow]; // Should match targetLetter
+            // alert(`Found letter: ${foundLetter}! Binary: ${binaryStringForCurrentLetter}`); // Debug
+            
+            // Update guessed word display
+            let tempGuessedWordArr = guessedWordDisplay.textContent.split('');
+            if (tempGuessedWordArr.join('') === "_".repeat(secretWord.length) && currentLetterIndex === 0) {
+                 tempGuessedWordArr = Array(secretWord.length).fill('_'); // Ensure correct length if starting
+            }
+            tempGuessedWordArr[currentLetterIndex] = foundLetter;
+            guessedWordDisplay.textContent = tempGuessedWordArr.join('');
+            guessedWord += foundLetter; // Append to internal tracking
+
+            // Update binary for guessed word display
+            binaryForGuessedWord += binaryStringForCurrentLetter + " ";
+            fullBinaryWordDisplay.textContent = binaryForGuessedWord.trim();
+
+            currentLetterIndex++;
+            
+            // Add a small delay before moving to the next letter
+            setTimeout(prepareNextLetter, 1000); 
+        }
+
+        function endGame() {
+            gameArea.classList.add('hidden');
+            finalMessageArea.classList.remove('hidden');
+            
+            finalWordMessage.textContent = `Awesome! We found the word: "${secretWord}"`;
+            finalBinaryOutput.textContent = binaryForGuessedWord.trim();
+        }
+
+        // --- Event Listeners ---
+        startGameBtn.addEventListener('click', startGame);
+        wordInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                startGameBtn.click();
+            }
+        });
+        
+        yesBtn.addEventListener('click', () => handleAnswer(true));
+        noBtn.addEventListener('click', () => handleAnswer(false));
+        restartBtn.addEventListener('click', resetGameUI);
+
+        // Initial setup
+        resetGameUI(); // Show intro area first
+
+    </script>
+</body>
+</html>

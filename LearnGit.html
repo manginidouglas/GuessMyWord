@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Git Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for better visual clarity if needed */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .commit-node {
+            transition: all 0.3s ease-in-out;
+        }
+        .branch-label, .head-label {
+            transition: all 0.3s ease-in-out;
+        }
+        /* Ensure scrollbars are styled if content overflows */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col items-center p-4 sm:p-8">
+
+    <div class="w-full max-w-5xl bg-white shadow-2xl rounded-xl p-6 sm:p-8">
+        <header class="mb-6 text-center">
+            <h1 class="text-3xl sm:text-4xl font-bold text-sky-600">Interactive Git Visualizer</h1>
+            <p class="text-slate-600 mt-2">Type Git commands below and see the repository state change visually!</p>
+            <p class="text-xs text-slate-500 mt-1">Supported: init, add &lt;file&gt;, commit -m "&lt;msg&gt;", branch &lt;name&gt;, checkout &lt;name&gt;, log</p>
+        </header>
+
+        <div class="mb-6 flex gap-2">
+            <input type="text" id="commandInput" class="flex-grow p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none" placeholder="e.g., git commit -m &quot;Initial commit&quot;">
+            <button id="runCommandBtn" class="bg-sky-500 hover:bg-sky-600 text-white font-semibold py-3 px-6 rounded-lg shadow transition-colors">Run</button>
+        </div>
+
+        <div class="flex flex-col lg:flex-row gap-6">
+            <div class="lg:w-2/3 bg-slate-50 p-4 rounded-lg shadow-inner min-h-[300px]">
+                <h2 class="text-xl font-semibold mb-3 text-sky-700">Repository State</h2>
+                <div id="visualRepo" class="space-y-3 relative">
+                    <p class="text-slate-500 italic">Repository not initialized. Type 'git init'.</p>
+                </div>
+            </div>
+
+            <div class="lg:w-1/3 bg-slate-50 p-4 rounded-lg shadow-inner flex flex-col min-h-[300px]">
+                <div>
+                    <h2 class="text-xl font-semibold mb-1 text-sky-700">Status</h2>
+                    <div id="statusArea" class="text-sm mb-4 p-2 bg-white rounded">
+                        <p><strong>Current Branch:</strong> <span id="currentBranch" class="font-mono text-sky-600">N/A</span></p>
+                        <p><strong>Staged Files:</strong> <span id="stagedFiles" class="font-mono text-green-600">None</span></p>
+                    </div>
+                </div>
+                
+                <div class="flex-grow flex flex-col">
+                    <h2 class="text-xl font-semibold mb-1 text-sky-700">Log / Output</h2>
+                    <div id="outputArea" class="text-sm p-2 bg-white rounded h-48 overflow-y-auto border border-slate-200 flex-grow">
+                        <p class="text-slate-400">Output will appear here...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+         <footer class="mt-8 text-center text-xs text-slate-500">
+            <p>This is a simplified Git simulator for learning purposes. Not all Git features or command options are supported.</p>
+        </footer>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const commandInput = document.getElementById('commandInput');
+        const runCommandBtn = document.getElementById('runCommandBtn');
+        const visualRepoDiv = document.getElementById('visualRepo');
+        const currentBranchSpan = document.getElementById('currentBranch');
+        const stagedFilesSpan = document.getElementById('stagedFiles');
+        const outputAreaDiv = document.getElementById('outputArea');
+
+        // --- Git Repository State ---
+        let repo = {
+            initialized: false,
+            commits: [], // Array of commit objects: { id: string, message: string, parentId: string|null, files: string[], branch: string, timestamp: Date }
+            branches: {}, // { branchName: commitId }
+            HEAD: null, //  { type: 'branch', name: string (branchName) } (Simplified: no detached HEAD for now)
+            stagingArea: [], // Array of filenames
+            // Not simulating working directory files explicitly for simplicity
+        };
+        let nextCommitIdCounter = 0;
+
+        // --- Helper Functions ---
+        function generateCommitId() {
+            return `c${nextCommitIdCounter++}`;
+        }
+
+        function logOutput(message, type = 'info') {
+            const p = document.createElement('p');
+            p.textContent = message;
+            if (type === 'error') {
+                p.className = 'text-red-500 font-semibold';
+            } else if (type === 'success') {
+                p.className = 'text-green-600';
+            } else if (type === 'command') {
+                p.className = 'text-blue-500 font-mono';
+                p.textContent = `> ${message}`;
+            }
+             // Prepend new messages so they appear at the top
+            outputAreaDiv.insertBefore(p, outputAreaDiv.firstChild);
+            // Clear placeholder if it exists
+            if (outputAreaDiv.childElementCount > 1 && outputAreaDiv.lastChild.textContent === "Output will appear here...") {
+                outputAreaDiv.removeChild(outputAreaDiv.lastChild);
+            }
+        }
+        
+        function clearOutputPlaceholder() {
+            if (outputAreaDiv.textContent === "Output will appear here..." || visualRepoDiv.textContent.includes("Repository not initialized")) {
+                outputAreaDiv.innerHTML = '';
+                visualRepoDiv.innerHTML = ''; // Clear initial message in repo area too if init happens
+            }
+        }
+
+
+        // --- Rendering Functions ---
+        function renderRepository() {
+            if (!repo.initialized) {
+                visualRepoDiv.innerHTML = '<p class="text-slate-500 italic">Repository not initialized. Type \'git init\'.</p>';
+                currentBranchSpan.textContent = 'N/A';
+                stagedFilesSpan.textContent = 'None';
+                return;
+            }
+            
+            visualRepoDiv.innerHTML = ''; // Clear previous state
+
+            // Render Commits in reverse chronological order (newest first)
+            const commitsToRender = [...repo.commits].reverse();
+
+            if (commitsToRender.length === 0) {
+                 visualRepoDiv.innerHTML = '<p class="text-slate-500 italic">No commits yet. Add files and commit.</p>';
+            }
+
+            commitsToRender.forEach(commit => {
+                const commitDiv = document.createElement('div');
+                commitDiv.className = 'commit-node bg-white p-3 rounded-lg shadow border border-slate-300 mb-4 relative';
+                
+                let commitHTML = `
+                    <div class="flex justify-between items-center mb-1">
+                        <strong class="text-sky-600 font-mono text-sm">${commit.id}</strong>
+                        <span class="text-xs text-slate-500">${commit.timestamp.toLocaleTimeString()} ${commit.timestamp.toLocaleDateString()}</span>
+                    </div>
+                    <p class="text-slate-700 text-sm mb-1">"${commit.message}"</p>
+                    <p class="text-xs text-slate-500">Files: ${commit.files.join(', ') || 'None'}</p>
+                `;
+                
+                commitDiv.innerHTML = commitHTML;
+
+                // Branch and HEAD labels container
+                const labelsContainer = document.createElement('div');
+                labelsContainer.className = 'absolute -right-2 top-1/2 -translate-y-1/2 flex flex-col items-end gap-1';
+
+
+                // Render branches pointing to this commit
+                Object.entries(repo.branches).forEach(([branchName, commitId]) => {
+                    if (commitId === commit.id) {
+                        const branchSpan = document.createElement('span');
+                        branchSpan.className = 'branch-label bg-green-500 text-white text-xs font-semibold px-2 py-1 rounded-full shadow';
+                        branchSpan.textContent = branchName;
+                        
+                        if (repo.HEAD && repo.HEAD.type === 'branch' && repo.HEAD.name === branchName) {
+                             const headSpan = document.createElement('span');
+                             headSpan.className = 'head-label bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow ml-1';
+                             headSpan.textContent = 'HEAD ->';
+                             // Prepend HEAD to branchSpan for visual grouping
+                             const wrapper = document.createElement('div');
+                             wrapper.className = 'flex items-center';
+                             wrapper.appendChild(headSpan);
+                             wrapper.appendChild(branchSpan);
+                             labelsContainer.appendChild(wrapper);
+                        } else {
+                            labelsContainer.appendChild(branchSpan);
+                        }
+                    }
+                });
+                
+                commitDiv.appendChild(labelsContainer);
+                visualRepoDiv.appendChild(commitDiv);
+            });
+
+            // Update Status Area
+            currentBranchSpan.textContent = repo.HEAD ? repo.HEAD.name : 'N/A';
+            stagedFilesSpan.textContent = repo.stagingArea.length > 0 ? repo.stagingArea.join(', ') : 'None';
+            if (repo.stagingArea.length > 0) {
+                stagedFilesSpan.className = 'font-mono text-green-600';
+            } else {
+                stagedFilesSpan.className = 'font-mono text-slate-500';
+            }
+        }
+
+        // --- Git Command Implementations ---
+        function gitInit() {
+            if (repo.initialized) {
+                logOutput("Repository already initialized.", 'error');
+                return;
+            }
+            clearOutputPlaceholder(); // Clear initial placeholder messages
+            repo.initialized = true;
+            repo.commits = [];
+            repo.branches = { 'main': null }; // No commits yet, so main points to null
+            repo.HEAD = { type: 'branch', name: 'main' };
+            repo.stagingArea = [];
+            nextCommitIdCounter = 0; // Reset commit ID counter
+            logOutput("Initialized empty Git repository.", 'success');
+            renderRepository();
+        }
+
+        function gitAdd(args) {
+            if (!repo.initialized) {
+                logOutput("Repository not initialized. Run 'git init' first.", 'error');
+                return;
+            }
+            if (args.length === 0) {
+                logOutput("Usage: git add <file1> [<file2> ...]", 'error');
+                return;
+            }
+            args.forEach(fileName => {
+                if (!repo.stagingArea.includes(fileName)) {
+                    repo.stagingArea.push(fileName);
+                    logOutput(`Added '${fileName}' to staging area.`);
+                } else {
+                    logOutput(`'${fileName}' is already staged.`);
+                }
+            });
+            renderRepository();
+        }
+
+        function gitCommit(args) {
+            if (!repo.initialized) {
+                logOutput("Repository not initialized.", 'error');
+                return;
+            }
+            if (!repo.HEAD || repo.HEAD.type !== 'branch') {
+                logOutput("Cannot commit in a detached HEAD state (not implemented) or without a branch.", 'error');
+                return;
+            }
+            if (repo.stagingArea.length === 0) {
+                logOutput("Nothing to commit, working tree clean.", 'info');
+                return;
+            }
+
+            const messageMatch = args.join(' ').match(/-m\s+"([^"]+)"/);
+            if (!messageMatch || !messageMatch[1]) {
+                const simpleMessageMatch = args.join(' ').match(/-m\s+([\w-]+)/);
+                 if (!simpleMessageMatch || !simpleMessageMatch[1]) {
+                    logOutput('Usage: git commit -m "<message>"', 'error');
+                    return;
+                 }
+                 messageMatch[1] = simpleMessageMatch[1]; // Use the simpler match if quotes were forgotten
+            }
+            const message = messageMatch[1];
+
+            const currentBranchName = repo.HEAD.name;
+            const parentId = repo.branches[currentBranchName]; // Get the commit the current branch points to
+
+            const newCommit = {
+                id: generateCommitId(),
+                message: message,
+                parentId: parentId,
+                files: [...repo.stagingArea],
+                branch: currentBranchName, // Store which branch this commit was made on (simplification)
+                timestamp: new Date()
+            };
+
+            repo.commits.push(newCommit);
+            repo.branches[currentBranchName] = newCommit.id; // Update branch to point to the new commit
+            repo.stagingArea = []; // Clear staging area
+
+            logOutput(`Committed to ${currentBranchName}: [${newCommit.id}] ${message}`, 'success');
+            renderRepository();
+        }
+
+        function gitBranch(args) {
+            if (!repo.initialized) {
+                logOutput("Repository not initialized.", 'error');
+                return;
+            }
+            if (args.length !== 1) {
+                logOutput("Usage: git branch <branch-name>", 'error');
+                return;
+            }
+            const branchName = args[0];
+            if (repo.branches[branchName]) {
+                logOutput(`Branch '${branchName}' already exists.`, 'error');
+                return;
+            }
+            
+            const currentCommitId = repo.HEAD.type === 'branch' ? repo.branches[repo.HEAD.name] : null; // Simplified
+            if (currentCommitId === null && repo.commits.length > 0) {
+                 // If HEAD points to a branch that points to no commit, but there are commits (e.g. after init, before first commit)
+                 // This case should ideally not happen if init correctly sets branch to null.
+                 // Or, if we want to allow branching before first commit, it points to null.
+                 logOutput(`Cannot create branch '${branchName}': HEAD does not point to a valid commit. Commit first.`, 'error');
+                 return;
+            }
+
+
+            repo.branches[branchName] = currentCommitId;
+            logOutput(`Created branch '${branchName}'. It points to ${currentCommitId || 'the void (no commits yet)'}.`, 'success');
+            renderRepository();
+        }
+
+        function gitCheckout(args) {
+            if (!repo.initialized) {
+                logOutput("Repository not initialized.", 'error');
+                return;
+            }
+            if (args.length !== 1) {
+                logOutput("Usage: git checkout <branch-name>", 'error');
+                return;
+            }
+            const targetName = args[0];
+
+            if (repo.branches.hasOwnProperty(targetName)) { // It's a branch
+                repo.HEAD = { type: 'branch', name: targetName };
+                logOutput(`Switched to branch '${targetName}'.`, 'success');
+            } else {
+                logOutput(`Branch or commit '${targetName}' not found.`, 'error');
+                // Add commit checkout logic here for detached HEAD if desired later
+            }
+            renderRepository();
+        }
+        
+        function gitLog() {
+            if (!repo.initialized) {
+                logOutput("Repository not initialized.", 'error');
+                return;
+            }
+            if (repo.commits.length === 0) {
+                logOutput("No commits yet.", 'info');
+                return;
+            }
+            logOutput("Commit Log:", 'info');
+            [...repo.commits].reverse().forEach(commit => {
+                let logEntry = `commit ${commit.id} (branch: ${commit.branch || 'N/A'})`;
+                if (repo.HEAD && repo.HEAD.type === 'branch' && repo.branches[repo.HEAD.name] === commit.id) {
+                    logEntry += ` (HEAD -> ${repo.HEAD.name})`;
+                }
+                Object.entries(repo.branches).forEach(([branch, cId]) => {
+                    if (cId === commit.id && (!repo.HEAD || repo.HEAD.name !== branch)) { // Avoid double listing HEAD branch
+                        logEntry += ` (${branch})`;
+                    }
+                });
+
+                logOutput(logEntry);
+                logOutput(`    Author: User <user@example.com>`); // Mock author
+                logOutput(`    Date:   ${commit.timestamp.toUTCString()}`);
+                logOutput(`\n    ${commit.message}\n`);
+            });
+        }
+
+
+        // --- Command Handling ---
+        function handleCommand() {
+            const fullCommand = commandInput.value.trim();
+            if (!fullCommand) return;
+
+            logOutput(fullCommand, 'command'); // Log the command itself
+            commandInput.value = ''; // Clear input
+
+            const parts = fullCommand.split(/\s+/);
+            const command = parts[0];
+            const subCommand = parts[1]; // e.g., 'add', 'commit', 'branch'
+            const args = parts.slice(2); // Arguments for subcommands
+
+            if (command !== 'git') {
+                logOutput(`Unknown command: '${command}'. Please use 'git'.`, 'error');
+                return;
+            }
+
+            switch (subCommand) {
+                case 'init':
+                    gitInit();
+                    break;
+                case 'add':
+                    gitAdd(parts.slice(2)); // Pass all args after 'add'
+                    break;
+                case 'commit':
+                    // Pass all parts after 'commit' to handle '-m "message"'
+                    gitCommit(parts.slice(2)); 
+                    break;
+                case 'branch':
+                    gitBranch(parts.slice(2)); // Pass branch name
+                    break;
+                case 'checkout':
+                    gitCheckout(parts.slice(2)); // Pass branch/commit name
+                    break;
+                case 'log':
+                    gitLog();
+                    break;
+                default:
+                    logOutput(`Unknown git command: '${subCommand}'. Supported: init, add, commit, branch, checkout, log.`, 'error');
+            }
+        }
+
+        // --- Event Listeners ---
+        runCommandBtn.addEventListener('click', handleCommand);
+        commandInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleCommand();
+            }
+        });
+
+        // --- Initial Render ---
+        renderRepository(); // Initial state (not initialized)
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Typewriter with Video Export</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Special+Elite&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+  <style>
+    :root {
+      --background-color: #1a1a1a;
+      --container-bg: #252525;
+      --dashed-border: #444;
+      --button-bg: #4a4a4a;
+      --button-hover: #6a6a6a;
+      --text-color: #f0f0f0;
+      --status-color: #aaa;
+      --paper-bg-start: #fdf5e6;
+      --paper-bg-end: #f7e9d1;
+      --typed-text-color: #3D3522;
+    }
+    body, html {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--background-color);
+      font-family: 'Special Elite', monospace;
+      color: var(--text-color);
+      transition: background-color 0.5s ease;
+    }
+    .hidden { display: none !important; }
+    .input-container {
+      text-align: center;
+      padding: 2rem;
+      border: 2px dashed var(--dashed-border);
+      border-radius: 15px;
+      background-color: var(--container-bg);
+      max-width: 90%;
+      width: 500px;
+    }
+    h1 { margin-top: 0; }
+    .button-group {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      margin-top: 1.5rem;
+    }
+    button, .button-label {
+      background-color: var(--button-bg);
+      color: white;
+      padding: 15px 30px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+      font-size: 1rem;
+      border: none;
+      font-family: 'Special Elite', monospace;
+    }
+    button:hover, .button-label:hover { background-color: var(--button-hover); }
+    button:disabled {
+      background-color: #333;
+      color: #777;
+      cursor: not-allowed;
+    }
+    #pdf-input { display: none; }
+    #text-input {
+      width: 100%;
+      height: 150px;
+      margin-top: 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--dashed-border);
+      background-color: #333;
+      color: var(--text-color);
+      padding: 10px;
+      font-family: 'Special Elite', monospace;
+      font-size: 1rem;
+      resize: vertical;
+    }
+    #status { margin-top: 1rem; font-size: 0.9rem; min-height: 1.2rem; color: var(--status-color); }
+    #canvas-container { display: flex; flex-direction: column; align-items: center; gap: 1.5rem; }
+    #typewriter-canvas {
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      max-width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="choice-container" class="input-container">
+    <h1>Interactive Typewriter</h1>
+    <p>How would you like to provide the text?</p>
+    <div class="button-group">
+      <button id="choose-paste-btn">Paste Text</button>
+      <button id="choose-pdf-btn">Upload PDF</button>
+    </div>
+  </div>
+
+  <div id="paste-container" class="input-container hidden">
+    <h1>Paste Your Text</h1>
+    <textarea id="text-input" placeholder="Once upon a midnight dreary..."></textarea>
+    <div class="button-group">
+      <button id="start-paste-btn" disabled>Start Typing</button>
+    </div>
+    <button id="back-to-choice1" style="margin-top:1rem; background:none; text-decoration:underline;">Back</button>
+  </div>
+
+  <div id="upload-container" class="input-container hidden">
+    <h1>Upload a PDF</h1>
+    <p>Select a PDF file to begin the animation.</p>
+    <input type="file" id="pdf-input" accept=".pdf">
+    <label for="pdf-input" class="button-label">Choose PDF File</label>
+    <div id="status"></div>
+    <button id="back-to-choice2" style="margin-top:1rem; background:none; text-decoration:underline;">Back</button>
+  </div>
+
+  <div id="canvas-container" class="hidden">
+    <div class="button-group" style="gap:0.5rem">
+      <label>Speed (cps)
+        <input id="speed" type="range" min="5" max="40" value="18" step="1">
+      </label>
+      <label>Font size
+        <input id="fontsize" type="range" min="14" max="36" value="24" step="1">
+      </label>
+    </div>
+    <canvas id="typewriter-canvas" width="800" height="600"></canvas>
+    <div class="button-group">
+      <button id="download-btn" disabled>Download Video</button>
+      <button id="restart-btn">Start Over</button>
+    </div>
+    <div id="download-status" style="font-size: 0.9rem; color: var(--status-color);"></div>
+  </div>
+
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
+
+    const choiceContainer = document.getElementById('choice-container');
+    const pasteContainer = document.getElementById('paste-container');
+    const uploadContainer = document.getElementById('upload-container');
+    const canvasContainer = document.getElementById('canvas-container');
+    const choosePasteBtn = document.getElementById('choose-paste-btn');
+    const choosePdfBtn = document.getElementById('choose-pdf-btn');
+    const startPasteBtn = document.getElementById('start-paste-btn');
+    const textInput = document.getElementById('text-input');
+    const pdfInput = document.getElementById('pdf-input');
+    const downloadBtn = document.getElementById('download-btn');
+    const restartBtn = document.getElementById('restart-btn');
+    const backBtns = [document.getElementById('back-to-choice1'), document.getElementById('back-to-choice2')];
+    const canvas = document.getElementById('typewriter-canvas');
+    const ctx = canvas.getContext('2d');
+    const statusElement = document.getElementById('status');
+    const downloadStatus = document.getElementById('download-status');
+
+    let textToType = "", charIndex = 0, animationFrameId;
+    let mediaRecorder, videoChunks = [], recordedVideoBlob = null;
+
+    let FONT_SIZE = 24;
+    let LINE_HEIGHT = 35;
+    const PADDING = 50;
+    let FONT = `${FONT_SIZE}px 'Special Elite', monospace`;
+
+    let cps = 18, pausePunctMs = 180;
+    let lastTime = 0, charBudget = 0, pendingPauseUntil = 0;
+    let cachedIndex = -1, cachedLines = [];
+    let lastBlinkTime = 0, cursorVisible = true;
+
+    const MAX_CHARS = 30000;
+    let totalChars = 0;
+
+    const showScreen = (s) => {
+      [choiceContainer, pasteContainer, uploadContainer, canvasContainer].forEach(x => x.classList.add('hidden'));
+      if (s) s.classList.remove('hidden');
+    };
+    choosePasteBtn.onclick = () => showScreen(pasteContainer);
+    choosePdfBtn.onclick = () => showScreen(uploadContainer);
+    backBtns.forEach(btn => btn.onclick = () => showScreen(choiceContainer));
+    restartBtn.onclick = () => window.location.reload();
+    textInput.addEventListener('input', () => {
+      startPasteBtn.disabled = textInput.value.trim().length === 0;
+    });
+    startPasteBtn.onclick = () => {
+      const t = textInput.value.trim();
+      if (t) startAnimation(t);
+    };
+    pdfInput.addEventListener('change', async e => {
+      const file = e.target.files[0];
+      if (!file || file.type !== 'application/pdf') {
+        statusElement.textContent = 'Please select a valid PDF file.';
+        return;
+      }
+      statusElement.textContent = 'Processing PDF...';
+      try {
+        const pdfText = await extractTextFromPdf(file);
+        if (pdfText.trim()) startAnimation(pdfText.trim());
+        else statusElement.textContent = 'Could not extract text from this PDF.';
+      } catch {
+        statusElement.textContent = 'Failed to process PDF.';
+      }
+    });
+
+    async function startAnimation(text) {
+      textToType = text.slice(0, MAX_CHARS);
+      totalChars = textToType.length;
+      if (text.length > MAX_CHARS)
+        downloadStatus.textContent = `Truncated to ${MAX_CHARS} characters.`;
+      showScreen(canvasContainer);
+      downloadBtn.disabled = true;
+      downloadStatus.textContent = "Recording animation...";
+      await document.fonts.ready;
+      startRecording();
+      lastTime = 0; charBudget = 0; pendingPauseUntil = 0;
+      animationFrameId = requestAnimationFrame(typewriterLoop);
+    }
+
+    function renderFrame() {
+      if (cachedIndex !== charIndex) {
+        cachedLines = wrapText(textToType.substring(0, charIndex)).split('\n');
+        cachedIndex = charIndex;
+      }
+      drawCanvasBackground();
+      ctx.fillStyle = getComputedStyle(document.documentElement)
+        .getPropertyValue('--typed-text-color').trim();
+      ctx.font = FONT;
+      ctx.textAlign = 'left';
+
+      const maxLines = Math.floor((canvas.height - PADDING * 2) / LINE_HEIGHT);
+      const startLine = Math.max(0, cachedLines.length - maxLines);
+      const visible = cachedLines.slice(startLine);
+      visible.forEach((line, i) => {
+        ctx.fillText(line, PADDING + 20, PADDING + i * LINE_HEIGHT);
+      });
+      const lastLine = visible[visible.length - 1] || '';
+      const cursorX = PADDING + 20 + ctx.measureText(lastLine).width;
+      const cursorY = PADDING + (visible.length - 1) * LINE_HEIGHT;
+      blinkCaret(cursorX, cursorY);
+
+      const pct = Math.min(100, Math.floor((charIndex / totalChars) * 100));
+      downloadStatus.textContent = `Recording animation... ${pct}%`;
+    }
+
+    function blinkCaret(x, y, timestamp = performance.now()) {
+      if (timestamp - lastBlinkTime > 500) {
+        cursorVisible = !cursorVisible;
+        lastBlinkTime = timestamp;
+      }
+      if (cursorVisible)
+        ctx.fillRect(x + 2, y - FONT_SIZE + 4, 10, FONT_SIZE);
+    }
+
+    function typewriterLoop(timestamp = performance.now()) {
+      const dt = lastTime ? (timestamp - lastTime) : 0;
+      lastTime = timestamp;
+      if (timestamp < pendingPauseUntil) {
+        renderFrame();
+        animationFrameId = requestAnimationFrame(typewriterLoop);
+        return;
+      }
+      charBudget += (dt / 1000) * cps;
+      while (charBudget >= 1 && charIndex < textToType.length) {
+        charIndex++;
+        charBudget -= 1;
+        const ch = textToType[charIndex - 1];
+        if (/[.,;:!?]/.test(ch)) {
+          pendingPauseUntil = timestamp + pausePunctMs;
+          break;
+        }
+      }
+      renderFrame();
+      if (charIndex < textToType.length)
+        animationFrameId = requestAnimationFrame(typewriterLoop);
+      else
+        stopRecording();
+    }
+
+    function drawCanvasBackground() {
+      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, getComputedStyle(document.documentElement)
+        .getPropertyValue('--paper-bg-start').trim());
+      gradient.addColorStop(1, getComputedStyle(document.documentElement)
+        .getPropertyValue('--paper-bg-end').trim());
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = 'rgba(255, 100, 100, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(PADDING + 10, PADDING - 20);
+      ctx.lineTo(PADDING + 10, canvas.height - PADDING + 20);
+      ctx.stroke();
+    }
+
+    function wrapText(text) {
+      const maxWidth = canvas.width - (PADDING * 2) - 15;
+      ctx.font = FONT;
+      const paragraphs = text.replace(/\r\n/g, '\n').split('\n');
+      const lines = [];
+      for (const p of paragraphs) {
+        if (p.trim() === '') { lines.push(''); continue; }
+        const words = p.split(' ');
+        let cur = '';
+        for (const w of words) {
+          const test = cur ? cur + ' ' + w : w;
+          if (ctx.measureText(test).width > maxWidth && cur) {
+            lines.push(cur);
+            cur = w;
+          } else {
+            cur = test;
+          }
+        }
+        if (cur) lines.push(cur);
+      }
+      return lines.join('\n');
+    }
+
+    async function extractTextFromPdf(file) {
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      let full = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        let line = '';
+        for (const item of content.items) {
+          line += item.str;
+          if (item.hasEOL) {
+            full += line + '\n';
+            line = '';
+          } else {
+            line += ' ';
+          }
+        }
+        if (line.trim()) full += line.trim() + '\n';
+        full += '\n';
+      }
+      return full;
+    }
+
+    function pickMimeType() {
+      const candidates = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+      return candidates.find(t => MediaRecorder.isTypeSupported(t)) || '';
+    }
+
+    function startRecording() {
+      const stream = canvas.captureStream(30);
+      const mimeType = pickMimeType();
+      try {
+        mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      } catch {
+        downloadStatus.textContent = 'Recording not supported in this browser.';
+        return;
+      }
+      videoChunks = [];
+      mediaRecorder.ondataavailable = e => { if (e.data.size) videoChunks.push(e.data); };
+      mediaRecorder.onstop = () => {
+        recordedVideoBlob = new Blob(videoChunks, { type: mimeType || 'video/webm' });
+        downloadBtn.disabled = false;
+        downloadStatus.textContent = 'Animation complete. Video is ready for download.';
+      };
+      mediaRecorder.start();
+    }
+
+    function stopRecording() {
+      setTimeout(() => {
+        cancelAnimationFrame(animationFrameId);
+        try {
+          if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+        } catch {}
+      }, 1500);
+    }
+
+    downloadBtn.onclick = () => {
+      if (recordedVideoBlob) {
+        const url = URL.createObjectURL(recordedVideoBlob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = 'typewriter-animation.webm';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+      }
+    };
+
+    document.getElementById('speed').addEventListener('input', e => { cps = +e.target.value; });
+    document.getElementById('fontsize').addEventListener('input', e => {
+      FONT_SIZE = +e.target.value;
+      LINE_HEIGHT = Math.round(FONT_SIZE * 1.45);
+      FONT = `${FONT_SIZE}px 'Special Elite', monospace`;
+      cachedIndex = -1;
+    });
+
+    showScreen(choiceContainer);
+  </script>
+</body>
+</html>
